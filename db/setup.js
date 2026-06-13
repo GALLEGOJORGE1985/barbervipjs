@@ -1,182 +1,180 @@
 /**
  * BARBER VIP — db/setup.js
  * ─────────────────────────────────────────────────────────────
- * Script de inicialización de la base de datos SQLite.
- * Ejecutar UNA VEZ con: node db/setup.js
- * También se ejecuta automáticamente en el arranque del servidor.
+ * Inicializa el esquema de PostgreSQL: crea tablas, índices,
+ * triggers y datos iniciales (servicios/barberos/config demo).
+ *
+ * Se ejecuta automáticamente al arrancar el servidor (server.js
+ * la llama con `await initDatabase()` antes de app.listen()).
+ *
+ * También puede ejecutarse manualmente:
+ *   node db/setup.js
  * ─────────────────────────────────────────────────────────────
  */
 
 require('dotenv').config();
-const Database = require('better-sqlite3');
-const path     = require('path');
-const fs       = require('fs');
+const { query } = require('./connection');
 
-const DB_PATH = process.env.DB_PATH || './db/barbervip.db';
+async function initDatabase() {
+  console.log('📦 Verificando esquema de PostgreSQL (BARBER VIP)...\n');
 
-// Asegurar que el directorio exista
-const dbDir = path.dirname(path.resolve(DB_PATH));
-if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+  // ═══════════════════════════════════════════════════════════
+  //  TABLA: citas
+  // ═══════════════════════════════════════════════════════════
+  await query(`
+    CREATE TABLE IF NOT EXISTS citas (
+      id              SERIAL PRIMARY KEY,
+      nombre_cliente  TEXT    NOT NULL,
+      telefono        TEXT    NOT NULL,
+      email           TEXT    DEFAULT '',
+      servicio        TEXT    NOT NULL,
+      barbero         TEXT    NOT NULL DEFAULT '',
+      fecha           TEXT    NOT NULL,
+      hora            TEXT    NOT NULL,
+      precio          NUMERIC NOT NULL DEFAULT 0,
+      estado          TEXT    NOT NULL DEFAULT 'pendiente'
+                              CHECK (estado IN ('pendiente','confirmada','completada','cancelada')),
+      notas           TEXT    DEFAULT '',
+      origen          TEXT    NOT NULL DEFAULT 'web'
+                              CHECK (origen IN ('web','admin')),
+      vista_admin     INTEGER NOT NULL DEFAULT 0,
+      created_at      TEXT    NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS'),
+      updated_at      TEXT    NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
+    );
+  `);
+  console.log('  ✅ Tabla "citas" lista');
 
-const db = new Database(path.resolve(DB_PATH));
+  // ═══════════════════════════════════════════════════════════
+  //  TABLA: servicios
+  // ═══════════════════════════════════════════════════════════
+  await query(`
+    CREATE TABLE IF NOT EXISTS servicios (
+      id          SERIAL PRIMARY KEY,
+      nombre      TEXT    NOT NULL UNIQUE,
+      precio      NUMERIC NOT NULL DEFAULT 0,
+      duracion    INTEGER NOT NULL DEFAULT 30,
+      activo      INTEGER NOT NULL DEFAULT 1,
+      created_at  TEXT    NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
+    );
+  `);
+  console.log('  ✅ Tabla "servicios" lista');
 
-// ── Activar WAL mode para mejor rendimiento ──────────────────
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+  // ═══════════════════════════════════════════════════════════
+  //  TABLA: barberos
+  // ═══════════════════════════════════════════════════════════
+  await query(`
+    CREATE TABLE IF NOT EXISTS barberos (
+      id          SERIAL PRIMARY KEY,
+      nombre      TEXT    NOT NULL UNIQUE,
+      activo      INTEGER NOT NULL DEFAULT 1,
+      created_at  TEXT    NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
+    );
+  `);
+  console.log('  ✅ Tabla "barberos" lista');
 
-console.log('📦 Iniciando configuración de la base de datos BARBER VIP...\n');
+  // ═══════════════════════════════════════════════════════════
+  //  TABLA: config
+  // ═══════════════════════════════════════════════════════════
+  await query(`
+    CREATE TABLE IF NOT EXISTS config (
+      clave       TEXT PRIMARY KEY,
+      valor       TEXT NOT NULL,
+      updated_at  TEXT NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
+    );
+  `);
+  console.log('  ✅ Tabla "config" lista');
 
-// ═══════════════════════════════════════════════════════════════
-//  TABLA: citas
-//  Guarda todas las reservas de clientes (web + admin)
-// ═══════════════════════════════════════════════════════════════
-db.exec(`
-  CREATE TABLE IF NOT EXISTS citas (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    nombre_cliente  TEXT    NOT NULL,
-    telefono        TEXT    NOT NULL,
-    email           TEXT    DEFAULT '',
-    servicio        TEXT    NOT NULL,
-    barbero         TEXT    NOT NULL DEFAULT '',
-    fecha           TEXT    NOT NULL,          -- formato YYYY-MM-DD
-    hora            TEXT    NOT NULL,          -- formato HH:MM
-    precio          REAL    DEFAULT 0,
-    estado          TEXT    NOT NULL DEFAULT 'pendiente'
-                            CHECK(estado IN ('pendiente','confirmada','completada','cancelada')),
-    notas           TEXT    DEFAULT '',
-    origen          TEXT    NOT NULL DEFAULT 'web'
-                            CHECK(origen IN ('web','admin')),
-    vista_admin     INTEGER NOT NULL DEFAULT 0, -- 0=no vista, 1=vista
-    created_at      TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
-    updated_at      TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
-  );
-`);
-console.log('  ✅ Tabla "citas" lista');
+  // ── ÍNDICES ──────────────────────────────────────────────────
+  await query(`CREATE INDEX IF NOT EXISTS idx_citas_fecha    ON citas(fecha);`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_citas_estado   ON citas(estado);`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_citas_telefono ON citas(telefono);`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_citas_barbero  ON citas(barbero);`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_citas_origen   ON citas(origen);`);
+  console.log('  ✅ Índices listos');
 
-// ═══════════════════════════════════════════════════════════════
-//  TABLA: servicios
-//  Catálogo de servicios de la barbería
-// ═══════════════════════════════════════════════════════════════
-db.exec(`
-  CREATE TABLE IF NOT EXISTS servicios (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    nombre      TEXT    NOT NULL UNIQUE,
-    precio      REAL    NOT NULL DEFAULT 0,
-    duracion    INTEGER NOT NULL DEFAULT 30,    -- minutos
-    activo      INTEGER NOT NULL DEFAULT 1,
-    created_at  TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
-  );
-`);
-console.log('  ✅ Tabla "servicios" lista');
+  // ── TRIGGER: actualizar updated_at automáticamente ──────────
+  await query(`
+    CREATE OR REPLACE FUNCTION set_citas_updated_at()
+    RETURNS TRIGGER AS $$
+    BEGIN
+      NEW.updated_at := to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS');
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+  `);
 
-// ═══════════════════════════════════════════════════════════════
-//  TABLA: barberos
-// ═══════════════════════════════════════════════════════════════
-db.exec(`
-  CREATE TABLE IF NOT EXISTS barberos (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    nombre      TEXT    NOT NULL UNIQUE,
-    activo      INTEGER NOT NULL DEFAULT 1,
-    created_at  TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
-  );
-`);
-console.log('  ✅ Tabla "barberos" lista');
+  await query(`
+    DROP TRIGGER IF EXISTS citas_updated_at ON citas;
+  `);
 
-// ═══════════════════════════════════════════════════════════════
-//  TABLA: config
-//  Ajustes generales del negocio
-// ═══════════════════════════════════════════════════════════════
-db.exec(`
-  CREATE TABLE IF NOT EXISTS config (
-    clave       TEXT PRIMARY KEY,
-    valor       TEXT NOT NULL,
-    updated_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-  );
-`);
-console.log('  ✅ Tabla "config" lista');
+  await query(`
+    CREATE TRIGGER citas_updated_at
+    BEFORE UPDATE ON citas
+    FOR EACH ROW
+    EXECUTE FUNCTION set_citas_updated_at();
+  `);
+  console.log('  ✅ Trigger updated_at listo');
 
-// ── ÍNDICES para búsquedas rápidas ──────────────────────────
-db.exec(`
-  CREATE INDEX IF NOT EXISTS idx_citas_fecha     ON citas(fecha);
-  CREATE INDEX IF NOT EXISTS idx_citas_estado    ON citas(estado);
-  CREATE INDEX IF NOT EXISTS idx_citas_telefono  ON citas(telefono);
-  CREATE INDEX IF NOT EXISTS idx_citas_barbero   ON citas(barbero);
-  CREATE INDEX IF NOT EXISTS idx_citas_origen    ON citas(origen);
-`);
-console.log('  ✅ Índices creados');
+  // ═══════════════════════════════════════════════════════════
+  //  DATOS INICIALES (solo se insertan si no existen)
+  // ═══════════════════════════════════════════════════════════
+  const serviciosDemo = [
+    ['Corte clásico',        35000, 30],
+    ['Corte + barba',        55000, 50],
+    ['Afeitado tradicional', 30000, 25],
+    ['Diseño de barba',      25000, 20],
+    ['Color de cabello',     80000, 60],
+    ['Tratamiento capilar',  45000, 40],
+    ['Cejas',                15000, 15],
+  ];
+  for (const [nombre, precio, duracion] of serviciosDemo) {
+    await query(
+      `INSERT INTO servicios (nombre, precio, duracion)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (nombre) DO NOTHING`,
+      [nombre, precio, duracion]
+    );
+  }
+  console.log('  ✅ Servicios iniciales verificados');
 
-// ── TRIGGER: actualizar updated_at automáticamente ──────────
-db.exec(`
-  CREATE TRIGGER IF NOT EXISTS citas_updated_at
-  AFTER UPDATE ON citas
-  BEGIN
-    UPDATE citas SET updated_at = datetime('now','localtime')
-    WHERE id = NEW.id;
-  END;
-`);
-console.log('  ✅ Trigger updated_at listo');
+  const barberosDemo = ['Carlos Rodríguez', 'Miguel Torres', 'Sebastián López'];
+  for (const nombre of barberosDemo) {
+    await query(
+      `INSERT INTO barberos (nombre) VALUES ($1) ON CONFLICT (nombre) DO NOTHING`,
+      [nombre]
+    );
+  }
+  console.log('  ✅ Barberos iniciales verificados');
 
-// ═══════════════════════════════════════════════════════════════
-//  DATOS INICIALES
-// ═══════════════════════════════════════════════════════════════
-const insertServicio = db.prepare(`
-  INSERT OR IGNORE INTO servicios (nombre, precio, duracion)
-  VALUES (@nombre, @precio, @duracion)
-`);
+  const configInicial = [
+    ['nombre_negocio', 'BARBER VIP'],
+    ['nit',            '900.123.456-7'],
+    ['direccion',      'Calle 72 #45-23, El Poblado, Medellín'],
+    ['telefono',       '+57 300 123 4567'],
+    ['email',          'info@barbervip.co'],
+    ['horario_inicio', '08:00'],
+    ['horario_fin',    '20:00'],
+    ['intervalo_min',  '30'],
+  ];
+  for (const [clave, valor] of configInicial) {
+    await query(
+      `INSERT INTO config (clave, valor) VALUES ($1, $2) ON CONFLICT (clave) DO NOTHING`,
+      [clave, valor]
+    );
+  }
+  console.log('  ✅ Configuración inicial verificada');
 
-const serviciosDemo = [
-  { nombre: 'Corte clásico',         precio: 35000, duracion: 30 },
-  { nombre: 'Corte + barba',         precio: 55000, duracion: 50 },
-  { nombre: 'Afeitado tradicional',  precio: 30000, duracion: 25 },
-  { nombre: 'Diseño de barba',       precio: 25000, duracion: 20 },
-  { nombre: 'Color de cabello',      precio: 80000, duracion: 60 },
-  { nombre: 'Tratamiento capilar',   precio: 45000, duracion: 40 },
-  { nombre: 'Cejas',                 precio: 15000, duracion: 15 },
-];
+  console.log('\n🎉 Esquema de PostgreSQL listo (BARBER VIP)\n');
+}
 
-const insertManyServicios = db.transaction((items) => {
-  for (const s of items) insertServicio.run(s);
-});
-insertManyServicios(serviciosDemo);
-console.log('  ✅ Servicios iniciales cargados');
+// Permite ejecutar manualmente: node db/setup.js
+if (require.main === module) {
+  initDatabase()
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error('❌ Error inicializando la base de datos:', err.message);
+      process.exit(1);
+    });
+}
 
-const insertBarbero = db.prepare(`
-  INSERT OR IGNORE INTO barberos (nombre) VALUES (@nombre)
-`);
-const barberosDemo = [
-  { nombre: 'Carlos Rodríguez' },
-  { nombre: 'Miguel Torres'    },
-  { nombre: 'Sebastián López'  },
-];
-const insertManyBarberos = db.transaction((items) => {
-  for (const b of items) insertBarbero.run(b);
-});
-insertManyBarberos(barberosDemo);
-console.log('  ✅ Barberos iniciales cargados');
-
-// Config del negocio
-const upsertConfig = db.prepare(`
-  INSERT OR IGNORE INTO config (clave, valor) VALUES (@clave, @valor)
-`);
-const configInicial = [
-  { clave: 'nombre_negocio', valor: 'BARBER VIP' },
-  { clave: 'nit',            valor: '900.123.456-7' },
-  { clave: 'direccion',      valor: 'Calle 72 #45-23, El Poblado, Medellín' },
-  { clave: 'telefono',       valor: '+57 300 123 4567' },
-  { clave: 'email',          valor: 'info@barbervip.co' },
-  { clave: 'horario_inicio', valor: '08:00' },
-  { clave: 'horario_fin',    valor: '20:00' },
-  { clave: 'intervalo_min',  valor: '30' },
-];
-const seedConfig = db.transaction((items) => {
-  for (const c of items) upsertConfig.run(c);
-});
-seedConfig(configInicial);
-console.log('  ✅ Configuración inicial cargada');
-
-db.close();
-
-console.log('\n🎉 Base de datos BARBER VIP configurada correctamente.');
-console.log(`   Archivo: ${path.resolve(DB_PATH)}\n`);
-
-module.exports = { DB_PATH };
+module.exports = { initDatabase };
