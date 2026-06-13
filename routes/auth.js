@@ -1,6 +1,6 @@
 /**
  * BARBER VIP — routes/auth.js
- * Rutas de autenticación del administrador.
+ * Rutas de autenticación del administrador (PostgreSQL).
  *
  * POST /api/auth/login           → Valida credenciales y devuelve JWT
  * GET  /api/auth/verify          → Verifica si el token activo es válido
@@ -8,12 +8,12 @@
  * POST /api/auth/change-password → Cambia contraseña (requiere token + contraseña actual)
  */
 
-const express    = require('express');
-const jwt        = require('jsonwebtoken');
-const bcrypt     = require('bcryptjs');
-const rateLimit  = require('express-rate-limit');
+const express   = require('express');
+const jwt       = require('jsonwebtoken');
+const bcrypt    = require('bcryptjs');
+const rateLimit = require('express-rate-limit');
 const { verifyToken } = require('../middleware/auth');
-const { getDB }  = require('../db/connection');
+const { query }       = require('../db/connection');
 
 const router = express.Router();
 
@@ -23,16 +23,19 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
 const ADMIN_USERNAME       = process.env.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD_PLAIN = process.env.ADMIN_PASSWORD || 'barbervip2024';
 
-// ── Obtener hash activo (DB > .env) ─────────────────────────
-// La contraseña puede haber sido cambiada y guardada en la BD.
-// Si existe en config tabla la usamos, si no usamos la de .env
-function getActivePasswordHash() {
+// ── Obtener hash activo (BD > .env) ─────────────────────────
+// La contraseña puede haber sido cambiada y guardada en la BD
+// (tabla config, clave 'admin_password_hash'). Si no existe,
+// usamos un hash generado a partir de ADMIN_PASSWORD del .env.
+async function getActivePasswordHash() {
   try {
-    const db  = getDB();
-    const row = db.prepare("SELECT valor FROM config WHERE clave = 'admin_password_hash'").get();
-    if (row && row.valor) return row.valor;
-  } catch {}
-  // Fallback: hash de la contraseña de .env
+    const result = await query(
+      "SELECT valor FROM config WHERE clave = 'admin_password_hash'"
+    );
+    if (result.rows[0] && result.rows[0].valor) return result.rows[0].valor;
+  } catch (err) {
+    console.warn('[AUTH] No se pudo leer admin_password_hash de la BD:', err.message);
+  }
   return bcrypt.hashSync(ADMIN_PASSWORD_PLAIN, 10);
 }
 
@@ -60,7 +63,7 @@ router.post('/login', loginLimiter, async (req, res) => {
       return res.status(401).json({ ok: false, message: 'Credenciales incorrectas.' });
     }
 
-    const activeHash    = getActivePasswordHash();
+    const activeHash    = await getActivePasswordHash();
     const passwordMatch = await bcrypt.compare(password, activeHash);
 
     if (!passwordMatch) {
@@ -109,8 +112,8 @@ router.post('/logout', verifyToken, (req, res) => {
 //  Body: { currentPassword, newPassword, confirmPassword }
 //  Header: Authorization: Bearer <token>
 //
-//  Guarda el nuevo hash en la tabla config (clave: admin_password_hash)
-//  para que persista entre reinicios del servidor sin tocar el .env
+//  Guarda el nuevo hash en la tabla config (PostgreSQL),
+//  por lo que persiste entre reinicios/redeploys del servidor.
 // ════════════════════════════════════════════════════════════
 router.post('/change-password', verifyToken, async (req, res) => {
   try {
@@ -120,53 +123,48 @@ router.post('/change-password', verifyToken, async (req, res) => {
     if (!currentPassword || !newPassword || !confirmPassword) {
       return res.status(400).json({ ok: false, message: 'Todos los campos son requeridos.' });
     }
-
     if (newPassword !== confirmPassword) {
       return res.status(400).json({ ok: false, message: 'La nueva contraseña y su confirmación no coinciden.' });
     }
-
     if (newPassword.length < 6) {
       return res.status(400).json({ ok: false, message: 'La nueva contraseña debe tener al menos 6 caracteres.' });
     }
-
     if (newPassword === currentPassword) {
       return res.status(400).json({ ok: false, message: 'La nueva contraseña debe ser diferente a la actual.' });
     }
 
     // ── Verificar contraseña actual ───────────────────────────
-    const activeHash    = getActivePasswordHash();
-    const currentMatch  = await bcrypt.compare(currentPassword, activeHash);
-
+    const activeHash   = await getActivePasswordHash();
+    const currentMatch = await bcrypt.compare(currentPassword, activeHash);
     if (!currentMatch) {
       return res.status(401).json({ ok: false, message: 'La contraseña actual es incorrecta.' });
     }
 
-    // ── Guardar nuevo hash en la BD ───────────────────────────
+    // ── Guardar nuevo hash en PostgreSQL ──────────────────────
     const newHash = await bcrypt.hash(newPassword, 12);
-    const db      = getDB();
 
-    db.prepare(`
-      INSERT INTO config (clave, valor, updated_at)
-      VALUES ('admin_password_hash', ?, datetime('now','localtime'))
-      ON CONFLICT(clave) DO UPDATE SET
-        valor      = excluded.valor,
-        updated_at = excluded.updated_at
-    `).run(newHash);
+    await query(
+      `INSERT INTO config (clave, valor, updated_at)
+       VALUES ('admin_password_hash', $1, to_char(NOW(),'YYYY-MM-DD HH24:MI:SS'))
+       ON CONFLICT (clave) DO UPDATE SET
+         valor      = EXCLUDED.valor,
+         updated_at = EXCLUDED.updated_at`,
+      [newHash]
+    );
 
-    // También guardar la fecha del último cambio
-    db.prepare(`
-      INSERT INTO config (clave, valor, updated_at)
-      VALUES ('admin_password_changed_at', datetime('now','localtime'), datetime('now','localtime'))
-      ON CONFLICT(clave) DO UPDATE SET
-        valor      = excluded.valor,
-        updated_at = excluded.updated_at
-    `).run();
+    await query(
+      `INSERT INTO config (clave, valor, updated_at)
+       VALUES ('admin_password_changed_at', to_char(NOW(),'YYYY-MM-DD HH24:MI:SS'), to_char(NOW(),'YYYY-MM-DD HH24:MI:SS'))
+       ON CONFLICT (clave) DO UPDATE SET
+         valor      = EXCLUDED.valor,
+         updated_at = EXCLUDED.updated_at`
+    );
 
     console.log(`[AUTH] Contraseña del admin cambiada el ${new Date().toLocaleString('es-CO')}`);
 
     return res.json({
       ok:      true,
-      message: 'Contraseña cambiada exitosamente. Usa la nueva contraseña en tu próximo inicio de sesión.',
+      message: 'Contraseña cambiada exitosamente y guardada en la base de datos.',
     });
 
   } catch (err) {
