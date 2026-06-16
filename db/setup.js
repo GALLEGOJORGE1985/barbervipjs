@@ -116,6 +116,72 @@ async function initDatabase() {
   console.log('  ✅ Trigger updated_at listo');
 
   // ═══════════════════════════════════════════════════════════
+  //  TABLA: productos (inventario)
+  // ═══════════════════════════════════════════════════════════
+  await query(`
+    CREATE TABLE IF NOT EXISTS productos (
+      id             SERIAL PRIMARY KEY,
+      nombre         TEXT    NOT NULL UNIQUE,
+      referencia     TEXT    DEFAULT '',
+      categoria      TEXT    DEFAULT '',
+      proveedor      TEXT    DEFAULT '',
+      precio_compra  NUMERIC NOT NULL DEFAULT 0,
+      precio_venta   NUMERIC NOT NULL DEFAULT 0,
+      cantidad       NUMERIC NOT NULL DEFAULT 0,
+      stock_minimo   NUMERIC NOT NULL DEFAULT 5,
+      created_at     TEXT    NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS'),
+      updated_at     TEXT    NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
+    );
+  `);
+  console.log('  ✅ Tabla "productos" lista');
+
+  // ═══════════════════════════════════════════════════════════
+  //  TABLA: movimientos_stock
+  // ═══════════════════════════════════════════════════════════
+  await query(`
+    CREATE TABLE IF NOT EXISTS movimientos_stock (
+      id                SERIAL PRIMARY KEY,
+      producto_id       INTEGER NOT NULL,
+      nombre_producto   TEXT    NOT NULL,
+      tipo              TEXT    NOT NULL CHECK (tipo IN ('entrada','salida','ajuste')),
+      cantidad          NUMERIC NOT NULL,
+      cantidad_anterior NUMERIC NOT NULL DEFAULT 0,
+      cantidad_nueva    NUMERIC NOT NULL DEFAULT 0,
+      notas             TEXT    DEFAULT '',
+      usuario           TEXT    DEFAULT 'admin',
+      created_at        TEXT    NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
+    );
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS idx_mov_producto ON movimientos_stock(producto_id);`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_mov_tipo     ON movimientos_stock(tipo);`);
+  console.log('  ✅ Tabla "movimientos_stock" lista');
+
+  // ═══════════════════════════════════════════════════════════
+  //  TABLA: facturas
+  // ═══════════════════════════════════════════════════════════
+  await query(`
+    CREATE TABLE IF NOT EXISTS facturas (
+      id               SERIAL PRIMARY KEY,
+      numero           TEXT    NOT NULL UNIQUE,
+      fecha            TEXT    NOT NULL,
+      nombre_cliente   TEXT    NOT NULL,
+      telefono_cliente TEXT    DEFAULT '',
+      items            TEXT    NOT NULL DEFAULT '[]',
+      subtotal         NUMERIC NOT NULL DEFAULT 0,
+      descuento_pct    NUMERIC NOT NULL DEFAULT 0,
+      descuento_amt    NUMERIC NOT NULL DEFAULT 0,
+      iva_pct          NUMERIC NOT NULL DEFAULT 0,
+      iva_amt          NUMERIC NOT NULL DEFAULT 0,
+      total            NUMERIC NOT NULL DEFAULT 0,
+      metodo_pago      TEXT    NOT NULL DEFAULT 'efectivo',
+      created_at       TEXT    NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
+    );
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS idx_facturas_fecha  ON facturas(fecha);`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_facturas_numero ON facturas(numero);`);
+  console.log('  ✅ Tabla "facturas" lista');
+
+  // ═══════════════════════════════════════════════════════════
   //  DATOS INICIALES (solo se insertan si no existen)
   // ═══════════════════════════════════════════════════════════
   const serviciosDemo = [
