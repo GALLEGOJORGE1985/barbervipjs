@@ -1,4 +1,3 @@
-
 /**
  * BARBER VIP — middleware/auth.js
  * Middleware de autenticación JWT.
