@@ -23,9 +23,11 @@ const { Server } = require('socket.io');
 const { initDatabase } = require('./db/setup');
 
 // ── Importar rutas ───────────────────────────────────────
-const authRoutes  = require('./routes/auth');
-const citasRoutes = require('./routes/citas');
-const adminRoutes = require('./routes/admin');
+const authRoutes       = require('./routes/auth');
+const citasRoutes      = require('./routes/citas');
+const adminRoutes      = require('./routes/admin');
+const inventarioRoutes = require('./routes/inventario');
+const facturasRoutes   = require('./routes/facturas');
 
 // ════════════════════════════════════════════════════════
 const app  = express();
@@ -100,9 +102,11 @@ app.use('/api', (_req, res, next) => {
 // ════════════════════════════════════════════════════════
 //  RUTAS API
 // ════════════════════════════════════════════════════════
-app.use('/api/auth',  authRoutes);
-app.use('/api/citas', citasRoutes);
-app.use('/api/admin', adminRoutes);
+app.use('/api/auth',       authRoutes);
+app.use('/api/citas',      citasRoutes);
+app.use('/api/admin',      adminRoutes);
+app.use('/api/inventario', inventarioRoutes);
+app.use('/api/facturas',   facturasRoutes);
 
 // ── Health check ──────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
@@ -192,13 +196,16 @@ async function start() {
     console.log('    PATCH /api/citas/:id/estado');
     console.log('    GET   /api/admin/stats');
     console.log('    GET   /api/admin/config');
-    console.log('    CRUD  /api/admin/servicios');
-    console.log('    CRUD  /api/admin/barberos');
+    console.log('    CRUD  /api/inventario');
+    console.log('    POST  /api/inventario/movimientos');
+    console.log('    CRUD  /api/facturas');
     console.log('\n  Eventos Socket.io emitidos:');
-    console.log('    citas:changed     { action, cita }');
-    console.log('    config:changed    { config }');
-    console.log('    servicios:changed { action, servicio }');
-    console.log('    barberos:changed  { action, barbero }');
+    console.log('    citas:changed        { action, cita }');
+    console.log('    config:changed       { config }');
+    console.log('    servicios:changed    { action, servicio }');
+    console.log('    barberos:changed     { action, barbero }');
+    console.log('    inventario:changed   { action, producto?, movimiento? }');
+    console.log('    facturas:changed     { action, factura }');
     console.log('\n  Ctrl+C para detener\n');
   });
 }
