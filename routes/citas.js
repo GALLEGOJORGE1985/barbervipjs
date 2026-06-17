@@ -83,7 +83,93 @@ router.get('/barberos', async (req, res) => {
 });
 
 // ════════════════════════════════════════════════════════════
-//  PÚBLICA — GET /api/citas/disponibilidad?fecha=YYYY-MM-DD&barbero=nombre
+//  PÚBLICA — GET /api/citas/mis-estadisticas?barbero=Nombre
+//  Permite a un barbero consultar SU PROPIO desempeño:
+//  cuántos servicios ha realizado, desglosado por tipo, el valor
+//  total y su 50% de ganancia. NO expone datos del cliente
+//  (nombre, teléfono, email) — solo tipo de servicio y valores.
+// ════════════════════════════════════════════════════════════
+router.get('/mis-estadisticas', async (req, res) => {
+  const { barbero, desde, hasta } = req.query;
+
+  if (!barbero || !barbero.trim()) {
+    return res.status(400).json({ ok: false, message: 'Debes indicar el nombre del barbero.' });
+  }
+
+  try {
+    // Verificar que el barbero exista y esté activo (evita consultas
+    // a nombres inventados o de barberos ya desactivados)
+    const barberoExiste = await query(
+      'SELECT id FROM barberos WHERE nombre = $1 AND activo = 1',
+      [barbero.trim()]
+    );
+    if (barberoExiste.rows.length === 0) {
+      return res.status(404).json({ ok: false, message: 'Barbero no encontrado o inactivo.' });
+    }
+
+    // Filtro de fechas opcional (por defecto: mes actual)
+    const hoy = new Date();
+    const defaultDesde = desde || `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-01`;
+    const defaultHasta = hasta || hoy.toISOString().split('T')[0];
+
+    // Solo citas COMPLETADAS cuentan para el cálculo de ganancias
+    const result = await query(
+      `SELECT servicio, fecha, hora, precio
+       FROM citas
+       WHERE barbero = $1
+         AND estado = 'completada'
+         AND fecha >= $2
+         AND fecha <= $3
+       ORDER BY fecha DESC, hora DESC`,
+      [barbero.trim(), defaultDesde, defaultHasta]
+    );
+
+    // Desglose por tipo de servicio (sin datos del cliente)
+    const porServicio = {};
+    let totalGeneral = 0;
+    let totalCortes = 0;
+
+    for (const cita of result.rows) {
+      const precio = Number(cita.precio) || 0;
+      if (!porServicio[cita.servicio]) {
+        porServicio[cita.servicio] = { servicio: cita.servicio, cantidad: 0, total: 0 };
+      }
+      porServicio[cita.servicio].cantidad += 1;
+      porServicio[cita.servicio].total += precio;
+      totalGeneral += precio;
+      totalCortes += 1;
+    }
+
+    const desglose = Object.values(porServicio).sort((a, b) => b.total - a.total);
+    const PORCENTAJE_GANANCIA = 0.5; // 50% para el barbero
+    const gananciaBarbero = totalGeneral * PORCENTAJE_GANANCIA;
+
+    return res.json({
+      ok: true,
+      data: {
+        barbero: barbero.trim(),
+        periodo: { desde: defaultDesde, hasta: defaultHasta },
+        totalCortes,
+        totalGeneral,
+        porcentajeGanancia: PORCENTAJE_GANANCIA * 100,
+        gananciaBarbero,
+        desglose, // [{ servicio, cantidad, total }]
+        // Detalle simple sin info de contacto del cliente
+        detalle: result.rows.map(c => ({
+          fecha: c.fecha,
+          hora: c.hora,
+          servicio: c.servicio,
+          precio: Number(c.precio) || 0,
+        })),
+      },
+    });
+  } catch (err) {
+    console.error('[MIS-ESTADISTICAS] Error:', err);
+    return res.status(500).json({ ok: false, message: 'Error al consultar estadísticas.' });
+  }
+});
+
+
 // ════════════════════════════════════════════════════════════
 router.get('/disponibilidad', async (req, res) => {
   const { fecha, barbero } = req.query;
