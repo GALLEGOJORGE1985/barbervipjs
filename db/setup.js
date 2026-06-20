@@ -161,22 +161,32 @@ async function initDatabase() {
   // ═══════════════════════════════════════════════════════════
   await query(`
     CREATE TABLE IF NOT EXISTS facturas (
-      id               SERIAL PRIMARY KEY,
-      numero           TEXT    NOT NULL UNIQUE,
-      fecha            TEXT    NOT NULL,
-      nombre_cliente   TEXT    NOT NULL,
-      telefono_cliente TEXT    DEFAULT '',
-      items            TEXT    NOT NULL DEFAULT '[]',
-      subtotal         NUMERIC NOT NULL DEFAULT 0,
-      descuento_pct    NUMERIC NOT NULL DEFAULT 0,
-      descuento_amt    NUMERIC NOT NULL DEFAULT 0,
-      iva_pct          NUMERIC NOT NULL DEFAULT 0,
-      iva_amt          NUMERIC NOT NULL DEFAULT 0,
-      total            NUMERIC NOT NULL DEFAULT 0,
-      metodo_pago      TEXT    NOT NULL DEFAULT 'efectivo',
-      created_at       TEXT    NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
+      id                   SERIAL PRIMARY KEY,
+      numero               TEXT    NOT NULL UNIQUE,
+      fecha                TEXT    NOT NULL,
+      nombre_cliente       TEXT    NOT NULL,
+      telefono_cliente     TEXT    DEFAULT '',
+      direccion_cliente    TEXT    DEFAULT '',
+      ciudad_cliente       TEXT    DEFAULT '',
+      departamento_cliente TEXT    DEFAULT '',
+      email_cliente        TEXT    DEFAULT '',
+      items                TEXT    NOT NULL DEFAULT '[]',
+      subtotal             NUMERIC NOT NULL DEFAULT 0,
+      descuento_pct        NUMERIC NOT NULL DEFAULT 0,
+      descuento_amt        NUMERIC NOT NULL DEFAULT 0,
+      iva_pct              NUMERIC NOT NULL DEFAULT 0,
+      iva_amt              NUMERIC NOT NULL DEFAULT 0,
+      total                NUMERIC NOT NULL DEFAULT 0,
+      metodo_pago          TEXT    NOT NULL DEFAULT 'efectivo',
+      created_at           TEXT    NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
     );
   `);
+  // Migración defensiva: si la tabla ya existía de una versión anterior
+  // (sin estas columnas), las agregamos sin perder datos existentes.
+  await query(`ALTER TABLE facturas ADD COLUMN IF NOT EXISTS direccion_cliente    TEXT DEFAULT '';`);
+  await query(`ALTER TABLE facturas ADD COLUMN IF NOT EXISTS ciudad_cliente       TEXT DEFAULT '';`);
+  await query(`ALTER TABLE facturas ADD COLUMN IF NOT EXISTS departamento_cliente TEXT DEFAULT '';`);
+  await query(`ALTER TABLE facturas ADD COLUMN IF NOT EXISTS email_cliente        TEXT DEFAULT '';`);
   await query(`CREATE INDEX IF NOT EXISTS idx_facturas_fecha  ON facturas(fecha);`);
   await query(`CREATE INDEX IF NOT EXISTS idx_facturas_numero ON facturas(numero);`);
   console.log('  ✅ Tabla "facturas" lista');
