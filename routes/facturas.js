@@ -101,6 +101,7 @@ router.get('/:id', async (req, res) => {
 // POST /api/facturas
 router.post('/', async (req, res) => {
   const { numero, fecha, nombreCliente, telefonoCliente = '',
+          direccionCliente = '', ciudadCliente = '', departamentoCliente = '', emailCliente = '',
           items, subtotal, descuento = 0, descuentoAmt = 0,
           ivaPct = 0, ivaAmt = 0, total, metodoPago = 'efectivo' } = req.body;
 
@@ -110,12 +111,15 @@ router.post('/', async (req, res) => {
   try {
     const r = await query(
       `INSERT INTO facturas
-         (numero, fecha, nombre_cliente, telefono_cliente, items,
-          subtotal, descuento_pct, descuento_amt, iva_pct, iva_amt, total, metodo_pago)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         (numero, fecha, nombre_cliente, telefono_cliente,
+          direccion_cliente, ciudad_cliente, departamento_cliente, email_cliente,
+          items, subtotal, descuento_pct, descuento_amt, iva_pct, iva_amt, total, metodo_pago)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
        RETURNING *`,
       [
         numero, fecha, nombreCliente.trim(), (telefonoCliente || '').trim(),
+        (direccionCliente || '').trim(), (ciudadCliente || '').trim(),
+        (departamentoCliente || '').trim(), (emailCliente || '').trim(),
         JSON.stringify(items),
         Number(subtotal), Number(descuento), Number(descuentoAmt),
         Number(ivaPct), Number(ivaAmt), Number(total), metodoPago,
