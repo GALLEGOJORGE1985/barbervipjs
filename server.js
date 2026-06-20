@@ -45,7 +45,7 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5500',
   'http://127.0.0.1:5500',
   'http://127.0.0.1:3000',
-  'https://barbervip.netlify.app',   // ← tu dominio Netlify
+  'https://barbervipjs.netlify.app',   // ← tu dominio Netlify real
 ];
 
 const corsOriginFn = function(origin, cb) {
