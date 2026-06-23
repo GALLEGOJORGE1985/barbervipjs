@@ -100,12 +100,14 @@ router.get('/mis-estadisticas', async (req, res) => {
     // Verificar que el barbero exista y esté activo (evita consultas
     // a nombres inventados o de barberos ya desactivados)
     const barberoExiste = await query(
-      'SELECT id FROM barberos WHERE nombre = $1 AND activo = 1',
+      'SELECT id, porcentaje FROM barberos WHERE nombre = $1 AND activo = 1',
       [barbero.trim()]
     );
     if (barberoExiste.rows.length === 0) {
       return res.status(404).json({ ok: false, message: 'Barbero no encontrado o inactivo.' });
     }
+    // Usar el porcentaje configurado para este barbero (default 50%)
+    const PORCENTAJE_GANANCIA = Number(barberoExiste.rows[0].porcentaje || 50) / 100;
 
     // Filtro de fechas opcional (por defecto: mes actual)
     const hoy = new Date();
@@ -141,7 +143,6 @@ router.get('/mis-estadisticas', async (req, res) => {
     }
 
     const desglose = Object.values(porServicio).sort((a, b) => b.total - a.total);
-    const PORCENTAJE_GANANCIA = 0.5; // 50% para el barbero
     const gananciaBarbero = totalGeneral * PORCENTAJE_GANANCIA;
 
     return res.json({
@@ -172,37 +173,85 @@ router.get('/mis-estadisticas', async (req, res) => {
 
 // ════════════════════════════════════════════════════════════
 router.get('/disponibilidad', async (req, res) => {
-  const { fecha, barbero } = req.query;
+  const { fecha, barbero, servicio } = req.query;
 
   if (!fecha || !isValidDate(fecha)) {
     return res.status(400).json({ ok: false, message: 'Parámetro "fecha" inválido (usa YYYY-MM-DD).' });
   }
 
   try {
+    // Obtener duración del servicio (si se especifica) para bloquear
+    // los slots que caerían dentro de esa duración.
+    // Ej: servicio de 60min que empieza a las 10:00 bloquea 10:00 y 10:30.
+    let duracionMinutos = 30; // intervalo base de slots
+    if (servicio && servicio.trim()) {
+      const svcResult = await query(
+        'SELECT duracion FROM servicios WHERE nombre = $1 AND activo = 1',
+        [servicio.trim()]
+      );
+      if (svcResult.rows.length > 0) {
+        duracionMinutos = Number(svcResult.rows[0].duracion) || 30;
+      }
+    }
+
+    // Traer citas activas (NO canceladas) para la fecha/barbero indicados
     let result;
     if (barbero && barbero.trim()) {
       result = await query(
-        `SELECT hora, barbero, estado
+        `SELECT hora, barbero, servicio
          FROM citas
          WHERE fecha = $1 AND barbero = $2 AND estado <> 'cancelada'`,
         [fecha, barbero.trim()]
       );
     } else {
       result = await query(
-        `SELECT hora, barbero, estado
+        `SELECT hora, barbero, servicio
          FROM citas
          WHERE fecha = $1 AND estado <> 'cancelada'`,
         [fecha]
       );
     }
 
+    // Función para convertir HH:MM a minutos desde medianoche
+    const toMins = (hhmm) => {
+      const [h, m] = hhmm.split(':').map(Number);
+      return h * 60 + m;
+    };
+    // Función para convertir minutos a HH:MM
+    const toHHMM = (mins) => {
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+    };
+
+    // Construir el mapa de slots ocupados expandido por duración
     const ocupados = {};
+
     for (const row of result.rows) {
-      if (!ocupados[row.hora]) ocupados[row.hora] = [];
-      ocupados[row.hora].push(row.barbero);
+      // Buscar la duración real del servicio de esta cita reservada
+      let durCita = 30;
+      try {
+        const ds = await query(
+          'SELECT duracion FROM servicios WHERE nombre = $1',
+          [row.servicio]
+        );
+        if (ds.rows.length > 0) durCita = Number(ds.rows[0].duracion) || 30;
+      } catch {}
+
+      const inicioMins = toMins(row.hora);
+      const INTERVALO  = 30; // cada slot dura 30 min
+
+      // Bloquear todos los slots que esta cita ocupa según su duración
+      for (let offset = 0; offset < durCita; offset += INTERVALO) {
+        const slotBloqueado = toHHMM(inicioMins + offset);
+        if (!ocupados[slotBloqueado]) ocupados[slotBloqueado] = [];
+        if (!ocupados[slotBloqueado].includes(row.barbero)) {
+          ocupados[slotBloqueado].push(row.barbero);
+        }
+      }
     }
 
-    return res.json({ ok: true, fecha, ocupados });
+    return res.json({ ok: true, fecha, ocupados, duracionServicio: duracionMinutos });
   } catch (err) {
     console.error('[DISPONIBILIDAD] Error:', err);
     return res.status(500).json({ ok: false, message: 'Error al consultar disponibilidad.' });
