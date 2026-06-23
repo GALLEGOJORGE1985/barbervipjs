@@ -289,17 +289,16 @@ router.get('/barberos', async (req, res) => {
 });
 
 router.post('/barberos', async (req, res) => {
-  const { nombre } = req.body;
+  const { nombre, porcentaje = 50 } = req.body;
   if (!nombre || nombre.trim().length < 2)
     return res.status(400).json({ ok: false, message: 'Nombre del barbero requerido.' });
 
   try {
     const result = await query(
-      'INSERT INTO barberos (nombre) VALUES ($1) RETURNING *',
-      [nombre.trim()]
+      'INSERT INTO barberos (nombre, porcentaje) VALUES ($1, $2) RETURNING *',
+      [nombre.trim(), Number(porcentaje) || 50]
     );
     const nuevo = result.rows[0];
-
     emitChange(req, 'barberos:changed', { action: 'created', barbero: nuevo });
     return res.status(201).json({ ok: true, data: nuevo });
   } catch (err) {
@@ -312,17 +311,18 @@ router.post('/barberos', async (req, res) => {
 });
 
 router.put('/barberos/:id', async (req, res) => {
-  const { nombre, activo } = req.body;
+  const { nombre, activo, porcentaje } = req.body;
   try {
     const actualResult = await query('SELECT * FROM barberos WHERE id = $1', [req.params.id]);
     if (actualResult.rows.length === 0) return res.status(404).json({ ok: false, message: 'Barbero no encontrado.' });
     const actual = actualResult.rows[0];
 
     const result = await query(
-      `UPDATE barberos SET nombre = $1, activo = $2 WHERE id = $3 RETURNING *`,
+      `UPDATE barberos SET nombre = $1, activo = $2, porcentaje = $3 WHERE id = $4 RETURNING *`,
       [
-        (nombre ?? actual.nombre).trim(),
-        activo  !== undefined ? Number(!!activo) : actual.activo,
+        (nombre  ?? actual.nombre).trim(),
+        activo   !== undefined ? Number(!!activo)      : actual.activo,
+        porcentaje !== undefined ? Number(porcentaje)  : actual.porcentaje,
         req.params.id,
       ]
     );
