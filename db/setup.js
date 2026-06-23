@@ -67,9 +67,12 @@ async function initDatabase() {
       id          SERIAL PRIMARY KEY,
       nombre      TEXT    NOT NULL UNIQUE,
       activo      INTEGER NOT NULL DEFAULT 1,
+      porcentaje  NUMERIC NOT NULL DEFAULT 50,
       created_at  TEXT    NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
     );
   `);
+  // Migración defensiva para tablas ya existentes
+  await query(`ALTER TABLE barberos ADD COLUMN IF NOT EXISTS porcentaje NUMERIC NOT NULL DEFAULT 50;`);
   console.log('  ✅ Tabla "barberos" lista');
 
   // ═══════════════════════════════════════════════════════════
@@ -187,6 +190,9 @@ async function initDatabase() {
   await query(`ALTER TABLE facturas ADD COLUMN IF NOT EXISTS ciudad_cliente       TEXT DEFAULT '';`);
   await query(`ALTER TABLE facturas ADD COLUMN IF NOT EXISTS departamento_cliente TEXT DEFAULT '';`);
   await query(`ALTER TABLE facturas ADD COLUMN IF NOT EXISTS email_cliente        TEXT DEFAULT '';`);
+  await query(`ALTER TABLE facturas ADD COLUMN IF NOT EXISTS status           TEXT    DEFAULT 'activa';`);
+  await query(`ALTER TABLE facturas ADD COLUMN IF NOT EXISTS notas_anulacion  TEXT    DEFAULT '';`);
+  await query(`ALTER TABLE facturas ADD COLUMN IF NOT EXISTS anulada_at       TEXT    DEFAULT '';`);
   await query(`CREATE INDEX IF NOT EXISTS idx_facturas_fecha  ON facturas(fecha);`);
   await query(`CREATE INDEX IF NOT EXISTS idx_facturas_numero ON facturas(numero);`);
   console.log('  ✅ Tabla "facturas" lista');
