@@ -169,4 +169,29 @@ router.post('/', async (req, res) => {
   }
 });
 
+// PATCH /api/facturas/:id/anular
+router.patch('/:id/anular', async (req, res) => {
+  const { motivo = '' } = req.body;
+  if (!motivo || motivo.trim().length < 3) {
+    return res.status(400).json({ ok: false, message: 'Debes indicar el motivo de anulación (mínimo 3 caracteres).' });
+  }
+  try {
+    const exist = await query('SELECT id, status FROM facturas WHERE id = $1', [req.params.id]);
+    if (exist.rows.length === 0) return res.status(404).json({ ok: false, message: 'Factura no encontrada.' });
+    if (exist.rows[0].status === 'anulada') return res.status(409).json({ ok: false, message: 'Esta factura ya fue anulada.' });
+
+    const r = await query(
+      `UPDATE facturas SET status = 'anulada', notas_anulacion = $1, anulada_at = to_char(NOW(),'YYYY-MM-DD HH24:MI:SS')
+       WHERE id = $2 RETURNING *`,
+      [motivo.trim(), req.params.id]
+    );
+    const factura = r.rows[0];
+    emit(req, 'facturas:changed', { action: 'anulada', factura });
+    return res.json({ ok: true, message: 'Factura anulada correctamente.', data: factura });
+  } catch (err) {
+    console.error('[FAC ANULAR]', err);
+    return res.status(500).json({ ok: false, message: 'Error al anular la factura.' });
+  }
+});
+
 module.exports = router;
