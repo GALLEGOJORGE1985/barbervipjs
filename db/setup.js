@@ -54,9 +54,11 @@ async function initDatabase() {
       precio      NUMERIC NOT NULL DEFAULT 0,
       duracion    INTEGER NOT NULL DEFAULT 30,
       activo      INTEGER NOT NULL DEFAULT 1,
+      imagen      TEXT    DEFAULT '',
       created_at  TEXT    NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
     );
   `);
+  await query(`ALTER TABLE servicios ADD COLUMN IF NOT EXISTS imagen TEXT DEFAULT '';`);
   console.log('  ✅ Tabla "servicios" lista');
 
   // ═══════════════════════════════════════════════════════════
@@ -132,10 +134,12 @@ async function initDatabase() {
       precio_venta   NUMERIC NOT NULL DEFAULT 0,
       cantidad       NUMERIC NOT NULL DEFAULT 0,
       stock_minimo   NUMERIC NOT NULL DEFAULT 5,
+      imagen         TEXT    DEFAULT '',
       created_at     TEXT    NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS'),
       updated_at     TEXT    NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
     );
   `);
+  await query(`ALTER TABLE productos ADD COLUMN IF NOT EXISTS imagen TEXT DEFAULT '';`);
   console.log('  ✅ Tabla "productos" lista');
 
   // ═══════════════════════════════════════════════════════════
