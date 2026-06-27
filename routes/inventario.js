@@ -44,17 +44,17 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   const { nombre, referencia = '', categoria = '', proveedor = '',
-          precioCompra = 0, precioVenta = 0, cantidad = 0, stockMinimo = 5 } = req.body;
+          precioCompra = 0, precioVenta = 0, cantidad = 0, stockMinimo = 5, imagen = '' } = req.body;
   if (!nombre || nombre.trim().length < 2)
     return res.status(400).json({ ok: false, message: 'Nombre del producto requerido.' });
   try {
     const r = await query(
       `INSERT INTO productos
-         (nombre, referencia, categoria, proveedor, precio_compra, precio_venta, cantidad, stock_minimo)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         (nombre, referencia, categoria, proveedor, precio_compra, precio_venta, cantidad, stock_minimo, imagen)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        RETURNING *`,
       [nombre.trim(), referencia.trim(), categoria.trim(), proveedor.trim(),
-       Number(precioCompra), Number(precioVenta), Number(cantidad), Number(stockMinimo)]
+       Number(precioCompra), Number(precioVenta), Number(cantidad), Number(stockMinimo), imagen]
     );
     const prod = r.rows[0];
     emit(req, 'inventario:changed', { action: 'created', producto: prod });
@@ -68,7 +68,7 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   const { nombre, referencia, categoria, proveedor,
-          precioCompra, precioVenta, cantidad, stockMinimo } = req.body;
+          precioCompra, precioVenta, cantidad, stockMinimo, imagen } = req.body;
   try {
     const actual = await query('SELECT * FROM productos WHERE id = $1', [req.params.id]);
     if (actual.rows.length === 0) return res.status(404).json({ ok: false, message: 'Producto no encontrado.' });
@@ -78,8 +78,9 @@ router.put('/:id', async (req, res) => {
       `UPDATE productos SET
          nombre        = $1, referencia    = $2, categoria    = $3, proveedor     = $4,
          precio_compra = $5, precio_venta  = $6, cantidad     = $7, stock_minimo  = $8,
+         imagen        = $9,
          updated_at    = to_char(NOW(),'YYYY-MM-DD HH24:MI:SS')
-       WHERE id = $9 RETURNING *`,
+       WHERE id = $10 RETURNING *`,
       [
         (nombre        ?? a.nombre).trim(),
         (referencia    ?? a.referencia ?? '').trim(),
@@ -89,6 +90,7 @@ router.put('/:id', async (req, res) => {
         precioVenta   !== undefined ? Number(precioVenta)   : a.precio_venta,
         cantidad      !== undefined ? Number(cantidad)      : a.cantidad,
         stockMinimo   !== undefined ? Number(stockMinimo)   : a.stock_minimo,
+        imagen        !== undefined ? imagen                : (a.imagen || ''),
         req.params.id,
       ]
     );
