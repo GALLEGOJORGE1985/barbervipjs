@@ -209,14 +209,14 @@ router.get('/servicios', async (req, res) => {
 });
 
 router.post('/servicios', async (req, res) => {
-  const { nombre, precio = 0, duracion = 30 } = req.body;
+  const { nombre, precio = 0, duracion = 30, imagen = '' } = req.body;
   if (!nombre || nombre.trim().length < 2)
     return res.status(400).json({ ok: false, message: 'Nombre del servicio requerido.' });
 
   try {
     const result = await query(
-      'INSERT INTO servicios (nombre, precio, duracion) VALUES ($1, $2, $3) RETURNING *',
-      [nombre.trim(), Number(precio), Number(duracion)]
+      'INSERT INTO servicios (nombre, precio, duracion, imagen) VALUES ($1, $2, $3, $4) RETURNING *',
+      [nombre.trim(), Number(precio), Number(duracion), imagen]
     );
     const nuevo = result.rows[0];
 
@@ -232,20 +232,21 @@ router.post('/servicios', async (req, res) => {
 });
 
 router.put('/servicios/:id', async (req, res) => {
-  const { nombre, precio, duracion, activo } = req.body;
+  const { nombre, precio, duracion, activo, imagen } = req.body;
   try {
     const actualResult = await query('SELECT * FROM servicios WHERE id = $1', [req.params.id]);
     if (actualResult.rows.length === 0) return res.status(404).json({ ok: false, message: 'Servicio no encontrado.' });
     const actual = actualResult.rows[0];
 
     const result = await query(
-      `UPDATE servicios SET nombre = $1, precio = $2, duracion = $3, activo = $4
-       WHERE id = $5 RETURNING *`,
+      `UPDATE servicios SET nombre = $1, precio = $2, duracion = $3, activo = $4, imagen = $5
+       WHERE id = $6 RETURNING *`,
       [
         (nombre  ?? actual.nombre).trim(),
         precio   !== undefined ? Number(precio)   : actual.precio,
         duracion !== undefined ? Number(duracion) : actual.duracion,
         activo   !== undefined ? Number(!!activo) : actual.activo,
+        imagen   !== undefined ? imagen           : (actual.imagen || ''),
         req.params.id,
       ]
     );
