@@ -58,7 +58,7 @@ function emitChange(req, event, payload) {
 router.get('/servicios', async (req, res) => {
   try {
     const result = await query(
-      'SELECT id, nombre, precio, duracion, activo FROM servicios WHERE activo = 1 ORDER BY nombre'
+      'SELECT id, nombre, precio, duracion, activo, imagen FROM servicios WHERE activo = 1 ORDER BY nombre'
     );
     return res.json({ ok: true, data: result.rows });
   } catch (err) {
